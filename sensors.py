@@ -12,8 +12,26 @@ rangos = {
     "rpm": {"bajo": 2000, "alto": 10000}
 }
 
-# Estado para predicción naive t+1 (solo vibración)
-ultimo_vibracion = None
+# Estado para predicción (últimos observados)
+ultimo = {
+    "temperatura": None,
+    "presion": None,
+    "vibracion": None,
+    "rpm": None
+}
+
+# Estado SES (último pronóstico) para Temperatura y Presión
+ses_forecast_temp = None
+ses_forecast_pres = None
+
+# Hiperparámetros SES (ajustables 0<α<1)
+SES_ALPHA_TEMP = 0.3
+SES_ALPHA_PRES = 0.25
+
+def estado_pred_texto(sensor, pred):
+    lim = rangos[sensor]
+    riesgo = (pred < lim["bajo"]) or (pred > lim["alto"])
+    return ("Riesgo Preventivo", True) if riesgo else ("Normal", False)
 
 # Función para generar un dato aleatorio dentro del rango normal
 def generar_dato(sensor):
@@ -34,7 +52,7 @@ with open(archivo_csv, mode="w", newline="") as file:
     writer = csv.writer(file)
     writer.writerow(["Fecha", "Temperatura (°C)", "Presión (psi)", "Vibración (mm/s)", "RPM"])
 
-# Generar y guardar 20 muestras simuladas
+# Generar y enviar 20 muestras simuladas
 for i in range(20):
     fecha = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     temperatura = round(generar_dato("temperatura"), 2)
@@ -47,31 +65,68 @@ for i in range(20):
         writer = csv.writer(file)
         writer.writerow([fecha, temperatura, presion, vibracion, rpm])
 
-    # --------- PREDICCIÓN NAIVE SOLO PARA VIBRACIÓN ---------
-    # prediccion_t1 = último valor observado (si no hay último, usa el actual)
-    pred_vib = ultimo_vibracion if ultimo_vibracion is not None else vibracion
-    limites_vib = rangos["vibracion"]
-    riesgo_preventivo_vib = (pred_vib < limites_vib["bajo"]) or (pred_vib > limites_vib["alto"])
+    # --------- PREDICCIONES ---------
+    # Vibración (naive t+1)
+    pred_vib = ultimo["vibracion"] if ultimo["vibracion"] is not None else vibracion
+    estado_vib, riesgo_vib = estado_pred_texto("vibracion", pred_vib)
+    texto_pred_vib = f"Predicción Vibración: {pred_vib:.3f} mm/s ({estado_vib})"
 
-    # Texto simple para widget ui_text en Node-RED
-    # Ej: "Predicción Vibración: 0.84 mm/s (Normal)" o "… (Riesgo Preventivo)"
-    estado_pred = "Riesgo Preventivo" if riesgo_preventivo_vib else "Normal"
-    texto_prediccion_vibracion = f"Predicción Vibración: {pred_vib:.3f} mm/s ({estado_pred})"
+    # Temperatura (SES)
+    if ses_forecast_temp is None:
+        ses_forecast_temp = temperatura  # inicialización
+    pred_tmp = round(ses_forecast_temp, 2)  # pronóstico t+1 (antes de actualizar)
+    estado_tmp, riesgo_tmp = estado_pred_texto("temperatura", pred_tmp)
+    texto_pred_tmp = f"Predicción Temperatura (SES α={SES_ALPHA_TEMP}): {pred_tmp:.2f} °C ({estado_tmp})"
+    # actualización SES: ŷ_{t+1} = α y_t + (1-α) ŷ_t
+    ses_forecast_temp = SES_ALPHA_TEMP * temperatura + (1 - SES_ALPHA_TEMP) * ses_forecast_temp
 
-    # Actualizar último valor
-    ultimo_vibracion = vibracion
-    # --------------------------------------------------------
+    # Presión (SES)
+    if ses_forecast_pres is None:
+        ses_forecast_pres = presion
+    pred_pre = round(ses_forecast_pres, 2)
+    estado_pre, riesgo_pre = estado_pred_texto("presion", pred_pre)
+    texto_pred_pre = f"Predicción Presión (SES α={SES_ALPHA_PRES}): {pred_pre:.2f} psi ({estado_pre})"
+    ses_forecast_pres = SES_ALPHA_PRES * presion + (1 - SES_ALPHA_PRES) * ses_forecast_pres
 
-    # Enviar a Node-RED (incluye el nuevo campo de texto para el widget)
+    # RPM (naive t+1)
+    pred_rpm = ultimo["rpm"] if ultimo["rpm"] is not None else rpm
+    estado_rpm, riesgo_rpm = estado_pred_texto("rpm", pred_rpm)
+    texto_pred_rpm = f"Predicción RPM: {pred_rpm:.0f} rpm ({estado_rpm})"
+
+    # Actualizar últimos observados
+    ultimo["vibracion"] = vibracion
+    ultimo["temperatura"] = temperatura
+    ultimo["presion"] = presion
+    ultimo["rpm"] = rpm
+    # --------------------------------
+
+    # Enviar a Node-RED (incluye campos de texto por cada variable)
     datos = {
         "temperatura": temperatura,
         "presion": presion,
         "vibracion": vibracion,
         "rpm": rpm,
-        # Campos específicos para el widget de texto de Vibración
+
+        # Vibración (naive)
         "prediccion_vibracion_t1": pred_vib,
-        "prediccion_vibracion_texto": texto_prediccion_vibracion,
-        "prediccion_vibracion_riesgo": riesgo_preventivo_vib,
+        "prediccion_vibracion_texto": texto_pred_vib,
+        "prediccion_vibracion_riesgo": riesgo_vib,
+
+        # Temperatura (SES)
+        "prediccion_temperatura_t1": pred_tmp,
+        "prediccion_temperatura_texto": texto_pred_tmp,
+        "prediccion_temperatura_riesgo": riesgo_tmp,
+
+        # Presión (SES)
+        "prediccion_presion_t1": pred_pre,
+        "prediccion_presion_texto": texto_pred_pre,
+        "prediccion_presion_riesgo": riesgo_pre,
+
+        # RPM (naive)
+        "prediccion_rpm_t1": pred_rpm,
+        "prediccion_rpm_texto": texto_pred_rpm,
+        "prediccion_rpm_riesgo": riesgo_rpm,
+
         "ts": fecha
     }
 
