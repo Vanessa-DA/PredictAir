@@ -4,7 +4,7 @@ import random
 import csv
 from datetime import datetime
 
-# Rangos para evaluación rápida (coherentes con alerts.py)
+# Rangos para evaluación rápida
 rangos = {
     "temperatura": {"bajo": 300, "alto": 950},
     "presion": {"bajo": 20, "alto": 60},
@@ -12,7 +12,7 @@ rangos = {
     "rpm": {"bajo": 2000, "alto": 10000}
 }
 
-# Estado para predicción (últimos observados)
+# Estado para predicción 
 ultimo = {
     "temperatura": None,
     "presion": None,
@@ -44,7 +44,7 @@ def generar_dato(sensor):
     elif sensor == "rpm":
         return random.uniform(1500, 11000)
 
-# Archivo CSV donde se guardan los datos (puedes ignorarlo si no lo usas)
+# Archivo CSV donde se guardan los datos 
 archivo_csv = "data/sensors_data.csv"
 
 # Crear encabezados del archivo
@@ -100,7 +100,7 @@ for i in range(20):
     ultimo["rpm"] = rpm
     # --------------------------------
 
-    # Enviar a Node-RED (incluye campos de texto por cada variable)
+    # Enviar a Node-RED 
     datos = {
         "temperatura": temperatura,
         "presion": presion,
@@ -139,7 +139,7 @@ for i in range(20):
     except Exception as e:
         print(" No se pudo conectar a Node-RED:", e)
 
-    # Esperar 3 segundos antes del siguiente envío
+    
     time.sleep(3)
 
 print("Envío de datos finalizado.")
